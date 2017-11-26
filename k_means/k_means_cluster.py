@@ -70,6 +70,7 @@ for f1, f2, _ in finance_features:
 #print "maxi stock option:", maxi_so
 print "mini salary:", mini_so
 print "maxi salary:", maxi_so
+print 'rescaled 200 000$', (200000-mini_so)/(maxi_so-mini_so)
 
 
 
