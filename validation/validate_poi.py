@@ -25,8 +25,17 @@ features_list = ["poi", "salary"]
 data = featureFormat(data_dict, features_list)
 labels, features = targetFeatureSplit(data)
 
+### split train/test dataset
+from sklearn.model_selection import train_test_split
+input_train, input_test, labels_train, labels_test = train_test_split(features,
+labels, test_size = 0.3, random_state = 42)
+print "train dataset size", len(labels_train)
+print "test  dataset size:", len(labels_test)
 
-
-### it's all yours from here forward!  
-
-
+### Decision tree Classifier first attempt
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score
+clf2 = DecisionTreeClassifier()
+clf2.fit(input_train, labels_train)
+predicted = clf2.predict(input_test)
+print "Accuracy:", float(accuracy_score(labels_test, predicted))
