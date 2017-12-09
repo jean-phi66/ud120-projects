@@ -46,11 +46,12 @@ print "Number of individuals:", len(data_dict)
 names = data_dict.keys()
 df_data = pd.DataFrame.from_dict(data_dict, orient = 'index', dtype = np.float)
 df_data.to_csv("ENRON_dataset.csv") # export for external data review/X-check
-
+print 'number of poi=', sum(df_data['poi'])
+print df_data.describe()
 # Imputing values to enable numeric analysis (clustering & PCA)
 # Imputation ref : https://stackoverflow.com/questions/29420737/pca-with-missing-values-in-python
 df_for_Imputation = df_data.drop(['poi', 'email_address', 'loan_advances'], axis = 1)
-imp = Imputer(missing_values='NaN', strategy='mean', axis=0)
+imp = Imputer(missing_values='NaN', strategy='median', axis=0)
 df_Imputed = imp.fit_transform(df_for_Imputation)
 df_Imputed = pd.DataFrame(df_Imputed, index=df_for_Imputation.index,
                                       columns=df_for_Imputation.columns)
@@ -75,13 +76,13 @@ df_financial, df_emails = split_dataset(df_Imputed)
 # http://seaborn.pydata.org/generated/seaborn.FacetGrid.html
 
 PCA_financial = PCA_for_outliers(df_financial, df_data, n_comp=5)
-PCA_emails = PCA_for_outliers(df_emails, df_data, n_comp=5, verbose=True)
+PCA_emails = PCA_for_outliers(df_emails, df_data, n_comp=5, verbose=False)
 
 
 outliers = ['TOTAL']
 df_data = df_data.drop(outliers)
 df_for_Imputation = df_data.drop(['poi', 'email_address', 'loan_advances'], axis = 1)
-imp = Imputer(missing_values='NaN', strategy='mean', axis=0)
+imp = Imputer(missing_values='NaN', strategy='median', axis=0)
 df_Imputed = imp.fit_transform(df_for_Imputation)
 df_Imputed = pd.DataFrame(df_Imputed, index=df_for_Imputation.index,
                                       columns=df_for_Imputation.columns)
@@ -120,10 +121,10 @@ from sklearn.cross_validation import train_test_split
 features_train, features_test, labels_train, labels_test = \
     train_test_split(df_for_ML, labels, test_size=0.3, random_state=420)
 print "Initial dataset size", len(labels)
-print "Training dataset size", len(labels_train)
-print "Testing dataset size", len(labels_test)
+print "Training dataset size", len(labels_train), 'with ', sum(labels_train), 'poi'
+print "Testing dataset size", len(labels_test), 'with ', sum(labels_test), 'poi'
 # Imputation on training dataset
-imp = Imputer(missing_values='NaN', strategy='mean', axis=0)
+imp = Imputer(missing_values='NaN', strategy='median', axis=0)
 df_Imputed = imp.fit_transform(features_train)
 print 'features_train size', features_train.shape
 print 'df_Imputed     size', df_Imputed.shape
@@ -134,7 +135,7 @@ features_train_financial, features_train_emails = split_dataset(df_Imputed)
 
 # PCA on financial variables
 from sklearn.decomposition import PCA as sklearnPCA
-n_comp = 3
+n_comp = 10
 pca_train_financial = sklearnPCA(n_components=n_comp, whiten = True)
 transformed_features_train_financial = pca_train_financial.fit_transform(features_train_financial)
 print 'transformed_features_train_financial', transformed_features_train_financial.shape
@@ -154,12 +155,44 @@ print 'transformed_features_train size:', transformed_features_train.shape
 # Test 1 : Decision tree
 # Training
 from sklearn.tree import DecisionTreeClassifier
-clf = DecisionTreeClassifier()
-clf.fit(transformed_features_train, labels_train)
-# Testing
-imp_test = Imputer(missing_values='NaN', strategy='mean', axis=0)
+
+# Comparison of classifiers
+# credit to : http://scikit-learn.org/stable/auto_examples/classification/plot_classifier_comparison.html
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.datasets import make_moons, make_circles, make_classification
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+
+
+names = ["Nearest Neighbors", "Linear SVM", "RBF SVM", "Gaussian Process",
+         "Decision Tree", "Random Forest", "Neural Net", "AdaBoost",
+         "Naive Bayes", "QDA"]
+
+classifiers = [
+    KNeighborsClassifier(3),
+    SVC(kernel="linear", C=0.025),
+    SVC(gamma=2, C=1),
+    GaussianProcessClassifier(1.0 * RBF(1.0)),
+    DecisionTreeClassifier(min_samples_split=5),
+    RandomForestClassifier(max_depth=10, n_estimators=20, max_features=1),
+    MLPClassifier(alpha=1),
+    AdaBoostClassifier(n_estimators = 100, learning_rate = .75,
+                       algorithm = 'SAMME'),
+    GaussianNB(),
+    QuadraticDiscriminantAnalysis()]
+
+# Preparation of testing dataset
+imp_test = Imputer(missing_values='NaN', strategy='median', axis=0)
 print 'features_test           size', features_test.shape
-print features_test
+#print features_test
 df_Imputed = imp_test.fit_transform(features_test)
 print 'df_Imputed size', df_Imputed.shape
 #print 'df_imputed', df_Imputed
@@ -177,11 +210,20 @@ transformed_features_test_emails = pca_train_emails.transform(features_test_emai
 transformed_features_test = np.concatenate((transformed_features_test_financial,
                                             transformed_features_test_emails),
                                             axis=1)
-
-# Prediction
-predicted = clf.predict(transformed_features_test)
-print "Accuracy=", accuracy_score(predicted, labels_test)
-
+from sklearn.metrics import confusion_matrix
+results_compa = {}
+for name, clf in zip(names, classifiers):
+    #clf = DecisionTreeClassifier()
+    clf.fit(transformed_features_train, labels_train)
+    # Prediction
+    predicted = clf.predict(transformed_features_test)
+    score = accuracy_score(predicted, labels_test)
+    results_compa[name]= score
+    print '__'
+    print 'Classifier:', name
+    print "Accuracy", score
+    print "Confusion matrix"
+    pprint(confusion_matrix(labels_test, predicted))
 
 
 ### TO BE CONSIDERED : use of pipeline and featureunion
