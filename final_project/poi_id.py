@@ -17,6 +17,7 @@ sys.path.append(".")
 from my_tools import PCA_for_outliers
 from my_tools import index_in_list
 from my_tools import split_dataset
+from my_tools import transform_emails_df
 
 
 from feature_format import featureFormat, targetFeatureSplit
@@ -44,13 +45,17 @@ print "Number of    features:", len(data_dict['SKILLING JEFFREY K'].keys())
 print "Number of individuals:", len(data_dict)
 # create dataframe
 names = data_dict.keys()
-df_data = pd.DataFrame.from_dict(data_dict, orient = 'index', dtype = np.float)
+df_data = pd.DataFrame.from_dict(data_dict, orient = 'index')#, dtype = np.float)
 df_data.to_csv("ENRON_dataset.csv") # export for external data review/X-check
 print 'number of poi=', sum(df_data['poi'])
 print df_data.describe()
 # Imputing values to enable numeric analysis (clustering & PCA)
 # Imputation ref : https://stackoverflow.com/questions/29420737/pca-with-missing-values-in-python
-df_for_Imputation = df_data.drop(['poi', 'email_address', 'loan_advances'], axis = 1)
+df_for_Imputation = df_data.drop(['email_address', 'loan_advances'], axis = 1)
+df_for_Imputation['poi'] = df_for_Imputation.poi.astype(np.int)
+df_for_Imputation['poi'] = df_for_Imputation.poi.astype('category')
+print df_for_Imputation.dtypes
+#df_for_Imputation = df_data.drop(['poi', 'email_address', 'loan_advances'], axis = 1)
 imp = Imputer(missing_values='NaN', strategy='median', axis=0)
 df_Imputed = imp.fit_transform(df_for_Imputation)
 df_Imputed = pd.DataFrame(df_Imputed, index=df_for_Imputation.index,
@@ -66,14 +71,46 @@ if(False):
     plt.show()
 # clustermap
 # credit to : http://seaborn.pydata.org/examples/structured_heatmap.html
-clustmap = sns.clustermap(df_Imputed.corr(), center=0)
-plt.setp(clustmap.ax_heatmap.xaxis.get_majorticklabels(), rotation=60, fontsize=6)
-plt.setp(clustmap.ax_heatmap.yaxis.get_majorticklabels(), rotation=0)
-plt.show()
+if(False):
+    clustmap = sns.clustermap(df_Imputed.corr(), center=0)
+    plt.setp(clustmap.ax_heatmap.xaxis.get_majorticklabels(), rotation=60, fontsize=6)
+    plt.setp(clustmap.ax_heatmap.yaxis.get_majorticklabels(), rotation=0)
+    plt.show()
+
+#pgrid = sns.PairGrid(df_Imputed)
+#pgrid = pgrid.map_diag(plt.hist)
+#pgrid = pgrid.map_offdiag(plt.scatter)
+
+
 # Definition of two variable families based on clustering seen
 df_financial, df_emails = split_dataset(df_Imputed)
+poi_dict = {'0':'not-poi', '1':'poi'}
+df_emails['poi'] = df_emails.poi.astype(np.int)
+df_emails['poi'] = df_emails.poi.astype(str)
+df_emails = df_emails.replace({'poi': poi_dict})
+print df_emails.dtypes
+print df_emails['poi']
+#df_emails['poi'] = df_emails.poi.astype('category')
+print "df_emails type"
+print df_emails.dtypes
 # TO BE TESTED : Facet Plot
 # http://seaborn.pydata.org/generated/seaborn.FacetGrid.html
+pgrid = sns.PairGrid(df_emails, hue = 'poi')
+pgrid = pgrid.map_diag(plt.hist)
+pgrid = pgrid.map_offdiag(plt.scatter)
+#pgrid = pgrid.map(plt.scatter)
+plt.show()
+
+# normalization of df_emails by tot_messages
+df_emails_norm = transform_emails_df(df_emails)
+pgrid = sns.PairGrid(df_emails_norm, hue = 'poi')
+pgrid = pgrid.map_diag(plt.hist)
+pgrid = pgrid.map_offdiag(plt.scatter)
+#pgrid = pgrid.map(plt.scatter)
+plt.show()
+
+df_financial = df_financial.drop(['poi'], axis = 1)
+df_emails = df_emails.drop(['poi'], axis = 1)
 
 PCA_financial = PCA_for_outliers(df_financial, df_data, n_comp=5)
 PCA_emails = PCA_for_outliers(df_emails, df_data, n_comp=5, verbose=False)
@@ -88,6 +125,7 @@ df_Imputed = pd.DataFrame(df_Imputed, index=df_for_Imputation.index,
                                       columns=df_for_Imputation.columns)
 # Definition of two variable families based on clustering seen
 df_financial, df_emails = split_dataset(df_Imputed)
+df_emails_norm = transform_emails_df(df_emails)
 
 PCA_financial = PCA_for_outliers(df_financial, df_data, n_comp=5)
 PCA_emails = PCA_for_outliers(df_emails, df_data, n_comp=5)
@@ -119,7 +157,7 @@ df_for_ML = df_for_ML.drop('poi', axis=1)
 #train/test split of initial dataset
 from sklearn.cross_validation import train_test_split
 features_train, features_test, labels_train, labels_test = \
-    train_test_split(df_for_ML, labels, test_size=0.3, random_state=420)
+    train_test_split(df_for_ML, labels, test_size=0.3, random_state=42)
 print "Initial dataset size", len(labels)
 print "Training dataset size", len(labels_train), 'with ', sum(labels_train), 'poi'
 print "Testing dataset size", len(labels_test), 'with ', sum(labels_test), 'poi'
@@ -132,6 +170,7 @@ df_Imputed = pd.DataFrame(df_Imputed, index=features_train.index,
                                       columns=features_train.columns)
 # Definition of two variable families based on clustering seen
 features_train_financial, features_train_emails = split_dataset(df_Imputed)
+features_train_emails = transform_emails_df(features_train_emails)
 
 # PCA on financial variables
 from sklearn.decomposition import PCA as sklearnPCA
@@ -184,7 +223,7 @@ classifiers = [
     DecisionTreeClassifier(min_samples_split=5),
     RandomForestClassifier(max_depth=10, n_estimators=20, max_features=1),
     MLPClassifier(alpha=1),
-    AdaBoostClassifier(n_estimators = 100, learning_rate = .75,
+    AdaBoostClassifier(n_estimators = 300, learning_rate = .75,
                        algorithm = 'SAMME'),
     GaussianNB(),
     QuadraticDiscriminantAnalysis()]
@@ -199,6 +238,8 @@ print 'df_Imputed size', df_Imputed.shape
 df_Imputed = pd.DataFrame(df_Imputed, index=features_test.index,
                                       columns=features_test.columns)
 features_test_financial, features_test_emails = split_dataset(df_Imputed)
+features_test_emails = transform_emails_df(features_test_emails)
+
 print 'features_test           size', features_test.shape
 print 'features_test_financial size', features_test_financial.shape
 print 'features_test_emails    size', features_test_emails.shape
@@ -211,6 +252,8 @@ transformed_features_test = np.concatenate((transformed_features_test_financial,
                                             transformed_features_test_emails),
                                             axis=1)
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
 results_compa = {}
 for name, clf in zip(names, classifiers):
     #clf = DecisionTreeClassifier()
@@ -219,12 +262,15 @@ for name, clf in zip(names, classifiers):
     predicted = clf.predict(transformed_features_test)
     score = accuracy_score(predicted, labels_test)
     results_compa[name]= score
+    recall = recall_score(predicted, labels_test)
+    precision = precision_score(predicted, labels_test)
     print '__'
-    print 'Classifier:', name
-    print "Accuracy", score
+    print name
+    print "Accuracy :", score
+    print "Recall   :", recall
+    print "Precision:", precision
     print "Confusion matrix"
     pprint(confusion_matrix(labels_test, predicted))
-
 
 ### TO BE CONSIDERED : use of pipeline and featureunion
 # https://stackoverflow.com/questions/36113686/multiple-pipelines-that-merge-within-a-sklearn-pipeline
