@@ -18,6 +18,7 @@ from my_tools import PCA_for_outliers
 from my_tools import index_in_list
 from my_tools import split_dataset
 from my_tools import transform_emails_df
+from my_tools import transform_financial_df
 
 
 from feature_format import featureFormat, targetFeatureSplit
@@ -40,14 +41,325 @@ with open("final_project_dataset.pkl", "r") as data_file:
     data_dict = pickle.load(data_file)
 
 # List feature names (dict keys)
-pprint(data_dict['SKILLING JEFFREY K'].keys())
+print
+print "------- Task 1 - Features selection ------"
+print "Dataset review"
 print "Number of    features:", len(data_dict['SKILLING JEFFREY K'].keys())
 print "Number of individuals:", len(data_dict)
+print "Features names:"
+pprint(data_dict['SKILLING JEFFREY K'].keys())
 # create dataframe
 names = data_dict.keys()
-df_data = pd.DataFrame.from_dict(data_dict, orient = 'index')#, dtype = np.float)
-df_data.to_csv("ENRON_dataset.csv") # export for external data review/X-check
+df_data = pd.DataFrame.from_dict(data_dict, orient = 'index', dtype = np.float)
+#df_data.to_csv("ENRON_dataset.csv") # export for external data review/X-check
 print 'number of poi=', sum(df_data['poi'])
+# Review missing values
+### Task 2: Remove outliers
+print
+print "------ Task 2 : Outliers removal ------"
+### Task 3: Create new feature(s)
+print
+print 'Auditing missing values'
+missing_rate = df_data.isna().sum(axis=0)/df_data.shape[0]*100.
+missing_rate.sort_values(inplace = True)
+nb_feat = len(missing_rate)
+if(False):
+    fig, ax = plt.subplots()
+    ax.bar(np.arange(nb_feat),  missing_rate)
+    ax.set_xticks(np.arange(nb_feat))
+    ax.set_xticklabels( missing_rate.index, rotation=90)
+    ax.set_ylabel('Percentage of NaN values')
+    ax.set_xlabel('Feature Names')
+    ax.set_title('Missing Values ratio')
+    plt.plot([0, nb_feat], [60, 60], color='Red')
+    plt.show()
+print missing_rate
+print
+print "Dropping out features having more than 85% of values missing"
+# dropping columns with more than 60% of data missing
+idx = missing_rate[missing_rate>85.].index.tolist()
+df_data = df_data.drop(idx, axis = 1)
+print "Removed features:"
+pprint(idx)
+#
+outliers = ['TOTAL', 'THE TRAVEL AGENCY IN THE PARK'] # Records that do not correspond to a physical person
+print "Dropping out individuals that are not real persons:", outliers
+df_data = df_data.drop(outliers)
+print
+print "Dataset after first cleaning"
+print "Number of individuals:", df_data.shape[0]
+print "Number of    features:", df_data.shape[1]
+print 'Number of         poi:', sum(df_data['poi'])
+### Extract features and labels from dataset for local testing
+print
+print "Split DataSet between features and labels"
+labels = df_data['poi']
+features = df_data.drop(['poi', 'email_address'], axis = 1).fillna(0)
+print "------ Task 3 : New features creation ------"
+print "Introduce ratio on e-mails traffic"
+features = transform_emails_df(features)
+print "Dataset after ratio on e-mails introduction"
+print "Number of individuals:", features.shape[0]
+print "Number of    features:", features.shape[1]
+print
+#print "Introduce ratio on financial figures"
+#features = transform_financial_df(features)
+#print "Dataset after ratio on financial introduction"
+#print "Number of individuals:", features.shape[0]
+#print "Number of    features:", features.shape[1]
+print
+print "------ Task 4 : Try a variety of classifiers ------"
+print "On hold"
+print
+print "------ Task 5 : Tuning Classifier ------"
+print
+print "Train/test split"
+from sklearn.cross_validation import train_test_split
+features_train, features_test, labels_train, labels_test = \
+    train_test_split(features, labels, test_size=0.3, random_state=4)#429
+print "Training dataset dimensions:", features_train.shape
+print "with ", sum(labels_train), " poi"
+print "Testing  dataset dimensions:", features_test.shape
+print "with ", sum(labels_test), " poi"
+
+print "Building pipeline"
+from sklearn.pipeline import make_pipeline, Pipeline
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import chi2
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.svm import SVC
+scaler = MinMaxScaler()
+select = SelectKBest(chi2)
+adab = AdaBoostClassifier(algorithm = 'SAMME.R')
+SupClas = SVC()
+# example on how to use gridsearch to test different classifiers:
+# http://scikit-learn.org/stable/auto_examples/plot_compare_reduction.html#sphx-glr-auto-examples-plot-compare-reduction-py
+#pipe = make_pipeline(MinMaxScaler(), SelectKBest(chi2), AdaBoostClassifier())
+pipe = Pipeline(steps=[('scaling', scaler), ('selection', select),
+                        ('classifier', adab)])
+#                        ('classifier', SupClas)])
+#parameters_pipe = {'SelectKBest__k':(2,4,6,8,10),
+#              'AdaBoostClassifier__n_estimators':(50, 100, 500, 1000),
+#              'AdaBoostClassifier__learning_rate':(0.5, 1.0, 2.0, 5.0, 7.5)}
+parameters_pipe_full = {'selection__k':(2,4,6,8,10,15,20),
+                   'classifier__n_estimators':(50, 100, 500, 1000),
+                   'classifier__learning_rate':(0.5, 1.0, 2.0, 5.0, 7.5)}
+parameters_pipe_interm = {'selection__k':(2,4,8,10),
+#                   'classifier__C':(1.0, 10.0, 100., 150.),
+#                   'classifier__kernel':('rbf', 'linear', 'sigmoid')}
+                   'classifier__n_estimators':(50, 100),
+                   'classifier__learning_rate':(0.5, 7.5)}
+parameters_pipe_light = {'selection__k':(2,10,20),
+#                   'classifier__C':(1.0, 10.0, 100., 150.),
+#                   'classifier__kernel':('rbf', 'linear', 'sigmoid')}
+                   'classifier__n_estimators':(50, 100),
+                   'classifier__learning_rate':(1., 2.)}
+
+parameters_pipe = parameters_pipe_light
+
+pipe.fit(features_train, labels_train)
+predicted = pipe.predict(features_test)
+
+def print_metrics(predicted, labels_test):
+    from sklearn.metrics import confusion_matrix
+    from sklearn.metrics import precision_score
+    from sklearn.metrics import recall_score
+    score = accuracy_score(predicted, labels_test)
+    recall = recall_score(predicted, labels_test)
+    precision = precision_score(predicted, labels_test)
+    print 'Results'
+    print "Accuracy :", score
+    print "Recall   :", recall
+    print "Precision:", precision
+    print "Confusion matrix"
+    pprint(confusion_matrix(labels_test, predicted))
+    return
+print_metrics(predicted, labels_test)
+print
+print "GridSearchCV on pipeline"
+from sklearn.model_selection import GridSearchCV
+from sklearn.cross_validation import StratifiedShuffleSplit
+
+#shuffle = StratifiedShuffleSplit(labels, 5, random_state = 34)
+shuffle = StratifiedShuffleSplit(labels, n_iter = 20, test_size = 0.5, random_state = 0)
+#shuffle = StratifiedShuffleSplit(labels, 1000, random_state = 42) # from tester.py
+
+clf = GridSearchCV(pipe, parameters_pipe, scoring='f1', cv=shuffle,
+                   verbose=2)
+clf.fit(features, labels)
+#print "GridSearch results"
+#print pd.DataFrame.from_dict(clf.cv_results_)
+print "Best parameters found:"
+print clf.best_params_
+predicted = clf.predict(features_test)
+print_metrics(predicted, labels_test)
+# Way to extract useful information from gridsearchCV and pipeline
+# https://discussions.udacity.com/t/what-should-i-do-next/196671/7
+extract = clf.best_estimator_.named_steps['selection']
+print extract
+features_selected=extract.get_support(indices=True)
+print "Selected features index:", features_selected
+features_selected = features_selected + 1
+features['poi'] = labels
+complete_features_list = (features.columns.values)
+print "DataSet columns names"
+features_output = [complete_features_list[i] for i in features_selected]
+features_output.insert(0, 'poi')
+print
+print "Selected features names:"
+pprint(features_output)
+print "X-check"
+for i in features_selected:
+    print i, complete_features_list[i]
+#for item in features_list_new:
+#    print item
+#features_list = features_list.tolist()
+#print "features_list type after tolist", type(features_list), features_list
+#features_list.insert(0, 'poi')
+#print features_list, columns_with_support
+my_dataset = features.to_dict('index')
+
+#del my_dataset['TOTAL']
+#del my_dataset['THE TRAVEL AGENCY IN THE PARK']
+
+dump_classifier_and_data(clf.best_estimator_, my_dataset, features_output)
+
+exit()
+
+from sklearn.feature_selection import SelectPercentile, f_classif
+selector = SelectPercentile(f_classif, percentile=90)
+selector.fit(features, labels)
+scores = -np.log10(selector.pvalues_)
+scores /= scores.max()
+# credit to : https://stackoverflow.com/questions/41724432/ml-getting-feature-names-after-feature-selection-selectpercentile-python
+columns = np.asarray(features.columns.values)
+support = np.asarray(selector.get_support())
+columns_with_support = columns[support]
+print "Selected features:", columns_with_support
+df_for_ML = features[columns_with_support]
+print "Dataframe for ML dimension:", df_for_ML.shape
+if (False):
+    print "Scaling features"
+    from sklearn.preprocessing import MinMaxScaler
+    scaler = MinMaxScaler()
+    scaler.fit(features)
+    featured_scaled = scaler.transform(features)
+    features = pd.DataFrame(data=featured_scaled, index=features.index, columns=features.columns)
+### Task 4: Try a varity of classifiers
+### Please name your classifier clf for easy export below.
+### Note that if you want to do PCA or other multi-stage operations,
+### you'll need to use Pipelines. For more info:
+### http://scikit-learn.org/stable/modules/pipeline.html
+# Comparison of classifiers
+# credit to : http://scikit-learn.org/stable/auto_examples/classification/plot_classifier_comparison.html
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.datasets import make_moons, make_circles, make_classification
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+
+
+names = ["Nearest Neighbors", "Linear SVM", "RBF SVM", "Gaussian Process",
+         "Decision Tree", "Random Forest", "Neural Net", "AdaBoost",
+         "Naive Bayes", "QDA"]
+
+classifiers = [
+    KNeighborsClassifier(3),
+#    SVC(kernel="linear", C=0.025),
+#    SVC(gamma=2, C=1),
+    GaussianProcessClassifier(1.0 * RBF(1.0)),
+    DecisionTreeClassifier(min_samples_split=5),
+    RandomForestClassifier(max_depth=10, n_estimators=20, max_features=1),
+    MLPClassifier(alpha=1),
+    AdaBoostClassifier(n_estimators = 100, learning_rate = 5.,
+                       algorithm = 'SAMME'),
+    GaussianNB(),
+    QuadraticDiscriminantAnalysis()]
+
+
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+results_compa = {}
+for name, clf in zip(names, classifiers):
+    print '_______'
+    print name
+    #clf = DecisionTreeClassifier()
+    print "training..."
+    clf.fit(features_train, labels_train)
+    # Prediction
+    print "Prediction..."
+    predicted = clf.predict(features_test)
+    score = accuracy_score(predicted, labels_test)
+    results_compa[name]= score
+    recall = recall_score(predicted, labels_test)
+    precision = precision_score(predicted, labels_test)
+    print 'Results'
+    print "Accuracy :", score
+    print "Recall   :", recall
+    print "Precision:", precision
+    print "Confusion matrix"
+    pprint(confusion_matrix(labels_test, predicted))
+
+### Task 5: Tune your classifier to achieve better than .3 precision and recall
+### using our testing script. Check the tester.py script in the final project
+### folder for details on the evaluation method, especially the test_classifier
+### function. Because of the small size of the dataset, the script uses
+### stratified shuffle split cross validation. For more info:
+### http://scikit-learn.org/stable/modules/generated/sklearn.cross_validation.StratifiedShuffleSplit.html
+from sklearn.model_selection import GridSearchCV
+parameters = {#'base_estimator':('DecisionTreeClassifier', 'RandomForestClassifier', 'SVC'),
+              'n_estimators':(50, 100, 500, 1000),
+              'learning_rate':(0.5, 1.0, 2.0, 5.0, 7.5)}
+adab = AdaBoostClassifier(algorithm='SAMME')
+clf = GridSearchCV(adab, parameters, scoring='f1')
+clf.fit(features_train, labels_train)
+#print "GridSearch results"
+#print pd.DataFrame.from_dict(clf.cv_results_)
+print "Best parameters found:"
+print clf.best_params_
+
+print "Use of tuned parameters for cross-validation"
+clf_tuned = AdaBoostClassifier(n_estimators=clf.best_params_['n_estimators'],
+                               learning_rate=clf.best_params_['learning_rate'],
+                               algorithm='SAMME')
+clf_tuned.fit(features_train, labels_train)
+predicted = clf_tuned.predict(features_test)
+score = accuracy_score(predicted, labels_test)
+recall = recall_score(predicted, labels_test)
+precision = precision_score(predicted, labels_test)
+print 'Results of tuned classifier'
+print "Accuracy :", score
+print "Recall   :", recall
+print "Precision:", precision
+print "Confusion matrix"
+pprint(confusion_matrix(labels_test, predicted))
+
+### Task 6: Dump your classifier, dataset, and features_list so anyone can
+### check your results. You do not need to change anything below, but make sure
+### that the version of poi_id.py that you submit can be run on its own and
+### generates the necessary .pkl files for validating your results.
+features_list = columns_with_support#.tolist()#.insert(0, 'poi')
+print "features_list type", type(features_list)
+features_list = features_list.tolist()
+print "features_list type after tolist", type(features_list), features_list
+features_list.insert(0, 'poi')
+print features_list, columns_with_support
+my_dataset = data_dict
+del my_dataset['TOTAL']
+del my_dataset['THE TRAVEL AGENCY IN THE PARK']
+dump_classifier_and_data(clf_tuned, my_dataset, features_list)
+
+exit()
 print df_data.describe()
 # Imputing values to enable numeric analysis (clustering & PCA)
 # Imputation ref : https://stackoverflow.com/questions/29420737/pca-with-missing-values-in-python
@@ -322,3 +634,16 @@ if(False):
     ### generates the necessary .pkl files for validating your results.
 
     dump_classifier_and_data(clf, my_dataset, features_list)
+#    features_list = ['poi','salary','to_messages','deferral_payments',
+#     'total_payments','exercised_stock_options',
+#     'bonus','restricted_stock','shared_receipt_with_poi','restricted_stock_deferred','total_stock_value',
+#     'expenses', 'loan_advances', 'from_messages', 'other',
+#     'from_this_person_to_poi', 'director_fees', 'deferred_income',
+#     'long_term_incentive', 'from_poi_to_this_person']
+#
+#     complete_features_list = ['poi','salary','to_messages','deferral_payments',
+#      'total_payments','exercised_stock_options',
+#      'bonus','restricted_stock','shared_receipt_with_poi','restricted_stock_deferred','total_stock_value',
+#      'expenses', 'loan_advances', 'from_messages', 'other',
+#      'from_this_person_to_poi', 'director_fees', 'deferred_income',
+#      'long_term_incentive', 'email_address', 'from_poi_to_this_person']

@@ -80,9 +80,26 @@ def transform_emails_df(df_in):
     df['interaction_with_poi'] = (df['shared_receipt_with_poi'] +
                                        df['from_this_person_to_poi'] +
                                        df['from_poi_to_this_person'])/df.total_messages
-    df.shared_receipt_with_poi = df.shared_receipt_with_poi / df.to_messages
-    df.from_this_person_to_poi = df.from_this_person_to_poi / df.from_messages
-    df.from_poi_to_this_person = df.from_poi_to_this_person / df.to_messages
-    df.from_messages = df.from_messages / df.total_messages
-    df.to_messages = df.to_messages / df.total_messages
+    df['shared_receipt_with_poi_ratio'] = df.shared_receipt_with_poi / df.to_messages
+    df['from_this_person_to_poi_ratio'] = df.from_this_person_to_poi / df.from_messages
+    df['from_poi_to_this_person_ratio'] = df.from_poi_to_this_person / df.to_messages
+    df['from_messages_ratio'] = df.from_messages / df.total_messages
+    df['to_messages_ratio'] = df.to_messages / df.total_messages
+    df = df.fillna(0.)
     return df
+def transform_financial_df(df_in):
+    df = df_in.copy()
+    df['salary_ratio'] = df.salary / df.total_payments
+    df['bonus_ratio'] = df.bonus / df.total_payments
+    df['deferral_payments_ratio'] = df.deferral_payments / df.total_payments
+    #df['exercised_stock_options_ratio'] = df.exercised_stock_options / df.total_payments
+    #df['total_stock_value_ratio'] = df.total_stock_value / df.total_payments
+    #df['restricted_stock_deferred'] = df.restricted_stock_deferred / df.total_payments
+    df = df.fillna(0.)
+    return df
+#    complete_features_list = ['poi','salary','to_messages','deferral_payments',
+#     'total_payments','exercised_stock_options',
+#     'bonus','restricted_stock','shared_receipt_with_poi','restricted_stock_deferred','total_stock_value',
+#     'expenses', 'loan_advances', 'from_messages', 'other',
+#     'from_this_person_to_poi', 'director_fees', 'deferred_income',
+#     'long_term_incentive', 'email_address', 'from_poi_to_this_person']
